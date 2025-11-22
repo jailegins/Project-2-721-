@@ -1,0 +1,301 @@
+---
+title: "Project 2 Legins"
+author: "Jai Legins"
+date: "2025-11-17"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+# Reading in the data
+
+data18 <- read.csv(here::here("AQ_2018.csv"))
+data19 <- read.csv(here::here("AQ_2019.csv"))
+data20 <- read.csv(here::here("AQ_2020.csv"))
+
+#Reading in libraries
+
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(tidyr)
+
+```
+
+
+
+
+```{r making dfs for manipulation, include=FALSE}
+# Reading in the data
+
+df18 <- data18
+df19 <- data19
+df20 <- data20
+
+
+```
+
+
+
+```{r making the data cleaning function, include=FALSE}
+
+processedData = function(data){
+  
+  # Making shorter informative variable names
+  
+  old_names = c("Daily.Max.8.hour.CO.Concentration",
+                "Daily.Mean.PM2.5.Concentration",
+                "Daily.Max.8.hour.Ozone.Concentration")
+  new_names = c("CO_8HR.MaxDaily", "PM2.5_MeanDaily", "O3_8HR.MaxDaily")
+  
+  names(data)[names(data) %in% old_names] <- new_names
+
+  
+  # Fixing the date column
+  
+  data$Date <- as.Date(data$Date, format = "%m/%d/%Y")
+  
+  # Fix negative values
+  
+  for(col in new_names) {
+    is_negative <- !is.na(data[[col]]) & data[[col]] < 0
+    data[[col]][is_negative] <- 0
+  }
+  
+  # Take averages of common dates and removes duplicates
+  
+  data <- data %>%
+    group_by(Date) %>%
+    summarise(
+      across(all_of(new_names), 
+             ~ mean(.x, na.rm = TRUE)),
+      .groups = "drop"
+    ) %>%
+    arrange(Date)
+ 
+  
+   return(data)
+  
+}
+  
+# Running the function on the data
+  
+df18 <- processedData(df18)
+df19 <- processedData(df19)
+df20 <- processedData(df20)
+
+```
+
+<br>
+
+## Plots
+
+<br>
+
+```{r combing data, include=FALSE}
+
+ combined_data <- bind_rows(
+  df18 %>% mutate(Year = 2018),
+  df19 %>% mutate(Year = 2019),
+  df20 %>% mutate(Year = 2020)
+)
+
+
+``` 
+
+
+```{r setting up for the plot, include=FALSE}
+
+# Calculate monthly stats
+monthly_stats <- combined_data %>%
+  mutate(Month = month(Date, label = TRUE)) %>%  # This works with Date objects!
+  group_by(Month) %>%
+  summarise(
+    CO_mean = mean(CO_8HR.MaxDaily, na.rm = TRUE),
+    CO_ci = 1.96 * sd(CO_8HR.MaxDaily, na.rm = TRUE) / sqrt(n()),
+    O3_mean = mean(O3_8HR.MaxDaily, na.rm = TRUE),
+    O3_ci = 1.96 * sd(O3_8HR.MaxDaily, na.rm = TRUE) / sqrt(n()),
+    .groups = "drop"
+  ) %>%
+  pivot_longer(cols = -Month, 
+               names_to = c("Pollutant", ".value"),
+               names_pattern = "(.+)_(mean|ci)")
+
+
+
+```
+
+## Plot 1: Monthly Average CO and O3 Concentrations (2018-2020)
+
+<br>
+
+```{r echo=FALSE, fig.width=7, fig.height=4}
+# Create plot
+ggplot(monthly_stats, aes(x = Month, y = mean, color = Pollutant, group = Pollutant)) +
+  geom_line() +
+  geom_point() +
+  geom_errorbar(aes(ymin = mean - ci, ymax = mean + ci), width = 0.2) +
+  scale_color_manual(values = c("CO" = "orange1", "O3" = "lightseagreen"),
+                     labels = c("CO" = "CO (8-hr Max)", "O3" = "O3 (8-hr Max)")) +
+  labs(
+    title = "Monthly Average CO and O3 Concentrations (2018-2020)",
+    subtitle = "Error bars show 95% confidence intervals",
+    x = "Month", 
+    y = "Concentration",
+    color = "Pollutant"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "top"
+  )
+
+
+
+```
+
+\newpage
+
+## Plot 2: Monthly Average PM2.5 Concentrations by Year
+
+<br>
+
+### Line and points are best if you don't want too much going on
+
+
+```{r plot 2, echo=FALSE, fig.height=5, fig.width=8, warning=FALSE}
+
+ combined_data <- bind_rows(
+  df18 %>% mutate(Year = "2018"),
+  df19 %>% mutate(Year = "2019"),
+  df20 %>% mutate(Year = "2020")
+)
+ 
+
+### Line and points are best if you don't want too much going on
+
+
+# Calculate monthly averages by year
+monthly_pm25 <- combined_data %>%
+  mutate(Month = month(Date, label = TRUE)) %>%
+  group_by(Year, Month) %>%
+  summarise(PM2.5_avg = mean(PM2.5_MeanDaily, na.rm = TRUE),
+            .groups = "drop")
+
+# Plot
+ggplot(monthly_pm25, aes(x = Month, y = PM2.5_avg, color = Year, group = Year)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 3.5) +
+  scale_color_manual(values = c("2018" = "lawngreen", 
+                                "2019" = "orangered", 
+                                "2020" = "mediumblue")) +
+  labs(
+    title = "Monthly Average PM2.5 Concentrations by Year (Line and Point)",
+    x = "Month",
+    y = "PM2.5 Concentration (μg/m³)",
+    color = "Year"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "top",
+    panel.grid.minor = element_blank()
+  )
+
+
+```
+
+\newpage
+
+### With Lines and Ribbons
+
+<br>
+
+This plot is nice for seeing the trends although there is extra noise. If we are only concerned with the overall trends, this is a nice graph!
+
+```{r echo=FALSE, fig.width=8, fig.height=5}
+
+# This plot is nice for seeing the trends although there is extra noise. If we are only concerned with the overall trends, this is a nice graph
+
+# Calculate monthly averages WITH standard deviation
+monthly_pm25 <- combined_data %>%
+  mutate(Month = month(Date, label = TRUE)) %>%
+  group_by(Year, Month) %>%
+  summarise(
+    PM2_5_avg = mean(PM2.5_MeanDaily, na.rm = TRUE),
+    PM2_5_sd = sd(PM2.5_MeanDaily, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Plot with shaded ribbon
+ggplot(monthly_pm25, aes(x = Month, y = PM2_5_avg, 
+                         color = Year, fill = Year, group = Year)) +
+  geom_ribbon(aes(ymin = PM2_5_avg - PM2_5_sd, 
+                  ymax = PM2_5_avg + PM2_5_sd), 
+              alpha = 0.2,        # Transparency for shaded area
+              color = NA) +       # No border on ribbon
+  geom_line(size = 1.2) +
+  geom_point(size = 2.5) +
+  scale_color_manual(values = c("2018" = "green4", 
+                                "2019" = "orangered", 
+                                "2020" = "mediumblue")) +
+  scale_fill_manual(values = c("2018" = "green4", 
+                               "2019" = "orangered", 
+                               "2020" = "mediumblue")) +
+  labs(
+    title = "Monthly Average PM2.5 Concentrations by Year (Ribbon and line)",
+    subtitle = "Shaded regions show ± 1 standard deviation",
+    x = "Month",
+    y = "PM2.5 Concentration (μg/m³)",
+    color = "Year",
+    fill = "Year"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 10, hjust = 0.5, color = "gray40"),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "top"
+  )
+
+```
+
+
+<br>
+
+
+```{r include=FALSE, fig.width=8, fig.height=5}
+
+## This plot is terrible for showing trends
+
+# Calculate monthly averages
+monthly_pm2.5 <- combined_data %>%
+  mutate(Month = month(Date, label = TRUE)) %>%
+  group_by(Year, Month) %>%
+  summarise(PM2.5_avg = mean(PM2.5_MeanDaily, na.rm = TRUE),
+            .groups = "drop")
+
+# Bar plot
+ggplot(monthly_pm2.5, aes(x = Month, y = PM2.5_avg, fill = Year)) +
+  geom_bar(stat = "identity",                    # Use actual values (not counts)
+           position = position_dodge(width = 0.8), # Bars side-by-side
+           width = 0.7) +                         # Bar width
+  scale_fill_manual(values = c("2018" = "#D55E00", 
+                               "2019" = "#009E73", 
+                               "2020" = "#0072B2")) +
+  labs(
+    title = "Monthly Average PM2.5 Concentrations by Year (Bar)",
+    x = "Month",
+    y = "PM2.5 Concentration (μg/m³)",
+    fill = "Year"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "top",
+    panel.grid.major.x = element_blank()  # Remove vertical grid lines
+  )
+
+```
